@@ -1,74 +1,60 @@
 
-import fitz  # PyMuPDF
+import os
+import fitz
 import ollama
 
 
-# =========================================================
-# EXTRACT TEXT FROM PDF
-# =========================================================
-
 def extract_text_from_pdf(uploaded_file):
-    """
-    Extract readable text from an uploaded PDF.
-    """
+    """Extract text from an uploaded PDF."""
 
     if uploaded_file is None:
-        raise ValueError("Aucun fichier PDF n'a été fourni.")
+        raise ValueError("Aucun fichier PDF fourni.")
 
     try:
         uploaded_file.seek(0)
-
         pdf_bytes = uploaded_file.read()
 
         if not pdf_bytes:
             raise ValueError("Le fichier PDF est vide.")
 
         with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
-            text_parts = []
+            text = "\n".join(page.get_text("text") for page in doc)
 
-            for page in doc:
-                page_text = page.get_text("text")
-
-                if page_text:
-                    text_parts.append(page_text)
-
-        text = "\n".join(text_parts).strip()
-
-        if not text:
+        if not text.strip():
             raise ValueError(
-                "Aucun texte détecté dans le PDF. "
-                "Le document est peut-être scanné."
+                "Aucun texte détecté. Vérifiez que le PDF contient du texte."
             )
 
-        return text
+        return text.strip()
 
     except Exception as e:
-        if isinstance(e, ValueError):
-            raise
-
         raise ValueError(
-            f"Impossible de lire le PDF : {type(e).__name__}: {e}"
+            f"Erreur de lecture du PDF : {type(e).__name__}: {e}"
         ) from e
 
 
-# =========================================================
-# OLLAMA AI
-# =========================================================
-
 def ask_openai(prompt, max_tokens=700):
-    """
-    Generate a response using the local Ollama Mistral model.
+    """Generate a response using Ollama Cloud."""
 
-    The function name remains ask_openai for compatibility
-    with the existing app.py.
-    """
+    api_key = os.getenv("OLLAMA_API_KEY")
 
-    if not isinstance(prompt, str) or not prompt.strip():
-        return "Ollama Error: Le prompt est vide."
+    if not api_key:
+        return (
+            "Configuration Error: OLLAMA_API_KEY is missing. "
+            "Configure it in Streamlit Cloud Secrets."
+        )
 
     try:
-        response = ollama.chat(
-            model="mistral",
+        client = ollama.Client(
+            host="https://ollama.com",
+            headers={
+                "Authorization": f"Bearer {api_key}"
+            },
+            timeout=180,
+        )
+
+        response = client.chat(
+            model="gpt-oss:20b-cloud",
             messages=[
                 {
                     "role": "user",
@@ -77,21 +63,16 @@ def ask_openai(prompt, max_tokens=700):
             ],
             options={
                 "temperature": 0.4,
-                "num_predict": max_tokens
-            }
+                "num_predict": max_tokens,
+            },
         )
 
-        # Safely extract the generated text.
-        message = response.get("message", {})
-        content = message.get("content", "")
+        content = response.get("message", {}).get("content", "")
 
         if not isinstance(content, str) or not content.strip():
-            return (
-                "Ollama Error: Le modèle Mistral a retourné "
-                "une réponse vide. Réessayez."
-            )
+            return "Ollama Cloud Error: La réponse du modèle est vide."
 
         return content.strip()
 
     except Exception as e:
-        return f"Ollama Error: {type(e).__name__}: {e}"
+        return f"Ollama Cloud Error: {type(e).__name__}: {e}"
