@@ -1,43 +1,62 @@
+import os
 import fitz  # PyMuPDF
 import ollama
 
 
 def extract_text_from_pdf(uploaded_file):
     """
-    Extracts text from a PDF file.
-
-    Args:
-        uploaded_file: Uploaded PDF file from Streamlit
-
-    Returns:
-        str: Extracted text from PDF
+    Extract text from an uploaded PDF file.
     """
 
-    doc = fitz.open(
-        stream=uploaded_file.read(),
-        filetype="pdf"
-    )
+    try:
+        uploaded_file.seek(0)
 
-    text = ""
+        doc = fitz.open(
+            stream=uploaded_file.read(),
+            filetype="pdf"
+        )
 
-    for page in doc:
-        text += page.get_text()
+        text = "\n".join(
+            page.get_text() for page in doc
+        )
 
-    return text
+        doc.close()
 
+        if not text.strip():
+            return "Aucun texte détecté dans ce PDF."
+
+        return text.strip()
+
+    except Exception as e:
+        raise ValueError(
+            f"Impossible de lire le PDF : {e}"
+        ) from e
 
 
 def ask_openai(prompt, max_tokens=500):
     """
-    Uses Ollama local AI instead of OpenAI API.
-    The function name remains ask_openai
-    to avoid changing app.py.
+    Generate an AI response using Ollama Cloud.
+    The function name is preserved for compatibility with app.py.
     """
 
-    try:
+    api_key = os.getenv("OLLAMA_API_KEY")
 
-        response = ollama.chat(
-            model="mistral",
+    if not api_key:
+        return (
+            "Configuration Error: OLLAMA_API_KEY is missing. "
+            "Configure this variable in Streamlit Cloud Secrets."
+        )
+
+    try:
+        client = ollama.Client(
+            host="https://ollama.com",
+            headers={
+                "Authorization": f"Bearer {api_key}"
+            }
+        )
+
+        response = client.chat(
+            model="gpt-oss:20b-cloud",
             messages=[
                 {
                     "role": "user",
@@ -52,7 +71,5 @@ def ask_openai(prompt, max_tokens=500):
 
         return response["message"]["content"]
 
-
     except Exception as e:
-
-        return f"Ollama Error: {str(e)}"
+        return f"Ollama Cloud Error: {str(e)}"
